@@ -15,25 +15,23 @@ app.get('/', (req, res) => {
 });
 
 app.post('/upload', async (req, res) => {
-    const { fileUrl } = req.body;
+    const { fileUrl, filename, extension } = req.body;
 
     if (!fileUrl) {
         console.error('fileUrl is missing in request body');
         return res.status(400).send('fileUrl is required');
     }
 
+    // Default filename and extension if not provided
+    const safeFilename = filename || crypto.randomBytes(16).toString('hex');
+    const safeExtension = extension ? `.${extension.replace(/^\./, '')}` : '.tmp';
+    const fileName = `${safeFilename}${safeExtension}`;
+    const filePath = path.join(__dirname, fileName);
+
     console.log('Received request to download:', fileUrl);
+    console.log('Saving file as:', filePath);
 
     try {
-        // Parse URL to get file extension
-        const parsedUrl = url.parse(fileUrl);
-        const fileNameFromUrl = path.basename(parsedUrl.pathname);
-        const fileExtension = path.extname(fileNameFromUrl) || '.tmp';
-
-        // Generate a unique file name with extension
-        const uniqueFileName = `${crypto.randomBytes(16).toString('hex')}${fileExtension}`;
-        const filePath = path.join(__dirname, uniqueFileName);
-
         // Start downloading the file
         const response = await axios({
             url: fileUrl,
@@ -63,8 +61,8 @@ app.post('/upload', async (req, res) => {
                     console.error('Error getting file stats:', err);
                     return res.status(500).send('Error getting file stats');
                 }
-                console.log(`File downloaded successfully: ${uniqueFileName}, Size: ${stats.size} bytes`);
-                res.status(200).send(`File downloaded successfully: ${uniqueFileName}`);
+                console.log(`File downloaded successfully: ${fileName}, Size: ${stats.size} bytes`);
+                res.status(200).send(`File downloaded successfully: ${fileName}`);
             });
         });
 
