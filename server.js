@@ -2,6 +2,8 @@ const express = require('express');
 const request = require('request-promise-native');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const os = require('os');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -17,22 +19,31 @@ app.post('/upload', async (req, res) => {
 
     if (!fileUrl) {
         console.error('fileUrl is missing in request body');
-        res.status(400).send('fileUrl is required');
-        return;
+        return res.status(400).send('fileUrl is required');
     }
 
     console.log('Received request to download:', fileUrl);
 
     try {
-        const fileName = path.basename(fileUrl);
-        const filePath = path.join(__dirname, fileName);
+        // Generate a unique file name
+        const fileName = `${crypto.randomBytes(16).toString('hex')}.tmp`;
+        const filePath = path.join(os.tmpdir(), fileName);
         const fileStream = fs.createWriteStream(filePath);
 
+        // Download and save the file
         const response = await request({
             uri: fileUrl,
             resolveWithFullResponse: true,
             encoding: null
         });
+
+        if (response.statusCode === 403) {
+            console.error('Access denied to the file. Status Code: 403');
+            return res.status(403).send('Access denied to the file');
+        } else if (response.statusCode >= 400) {
+            console.error('Failed to download file. Status Code:', response.statusCode);
+            return res.status(response.statusCode).send('Failed to download file');
+        }
 
         response.pipe(fileStream);
 
