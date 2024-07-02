@@ -1,9 +1,9 @@
 const express = require('express');
-const request = require('request-promise-native');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const os = require('os');
+const url = require('url');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -25,31 +25,47 @@ app.post('/upload', async (req, res) => {
     console.log('Received request to download:', fileUrl);
 
     try {
-        // Generate a unique file name
-        const fileName = `${crypto.randomBytes(16).toString('hex')}.tmp`;
-        const filePath = path.join(os.tmpdir(), fileName);
-        const fileStream = fs.createWriteStream(filePath);
+        // Parse URL to get file extension
+        const parsedUrl = url.parse(fileUrl);
+        const fileNameFromUrl = path.basename(parsedUrl.pathname);
+        const fileExtension = path.extname(fileNameFromUrl) || '.tmp';
 
-        // Download and save the file
-        const response = await request({
-            uri: fileUrl,
-            resolveWithFullResponse: true,
-            encoding: null
+        // Generate a unique file name with extension
+        const uniqueFileName = `${crypto.randomBytes(16).toString('hex')}${fileExtension}`;
+        const filePath = path.join(__dirname, uniqueFileName);
+
+        // Start downloading the file
+        const response = await axios({
+            url: fileUrl,
+            method: 'GET',
+            responseType: 'stream'
         });
 
-        if (response.statusCode === 403) {
+        // Debug: Print response status code and headers
+        console.log('Response Status Code:', response.status);
+        console.log('Response Headers:', response.headers);
+
+        if (response.status === 403) {
             console.error('Access denied to the file. Status Code: 403');
             return res.status(403).send('Access denied to the file');
-        } else if (response.statusCode >= 400) {
-            console.error('Failed to download file. Status Code:', response.statusCode);
-            return res.status(response.statusCode).send('Failed to download file');
+        } else if (response.status >= 400) {
+            console.error('Failed to download file. Status Code:', response.status);
+            return res.status(response.status).send('Failed to download file');
         }
 
-        response.pipe(fileStream);
+        // Pipe response data to file
+        const fileStream = fs.createWriteStream(filePath);
+        response.data.pipe(fileStream);
 
         fileStream.on('finish', () => {
-            console.log(`File downloaded successfully: ${fileName}`);
-            res.status(200).send(`File downloaded successfully: ${fileName}`);
+            fs.stat(filePath, (err, stats) => {
+                if (err) {
+                    console.error('Error getting file stats:', err);
+                    return res.status(500).send('Error getting file stats');
+                }
+                console.log(`File downloaded successfully: ${uniqueFileName}, Size: ${stats.size} bytes`);
+                res.status(200).send(`File downloaded successfully: ${uniqueFileName}`);
+            });
         });
 
         fileStream.on('error', (err) => {
@@ -59,7 +75,7 @@ app.post('/upload', async (req, res) => {
 
     } catch (err) {
         console.error('Request error:', err.message);
-        res.status(500).send('An error occurred while downloading the file');
+        res.status(500).send(`An error occurred while downloading the file: ${err.message}`);
     }
 });
 
